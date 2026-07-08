@@ -1,0 +1,1388 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Como a Internet Funciona de Verdade? (DNS Unveiled)</title>
+
+    <!-- Google Fonts: 8-Bit Orbit Core Tri-font Stack -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Tektur:wght@400;700;900&family=Chakra+Petch:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+
+    <style>
+        /* ===========================================
+           CSS CUSTOM PROPERTIES (THEME - 8-BIT ORBIT)
+           =========================================== */
+        :root {
+            /* Palette */
+            --dark-void: #0A0E27;
+            --deep-navy: #0F1B3D;
+            --neon-cyan: #5EDCF4;
+            --neon-pink: #F0A6CA;
+            --neon-yellow: #F4D03F;
+            --soft-lavender: #E2D5F2;
+            --white: #FFFFFF;
+            --gray-subtle: #8A99AD;
+
+            /* Typography */
+            --font-display: 'Tektur', sans-serif;
+            --font-body: 'Chakra Petch', sans-serif;
+            --font-mono: 'Space Mono', monospace;
+
+            /* Slide Constants */
+            --slide-padding: 100px;
+            --border-pixel: 4px;
+            --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+            --duration-normal: 0.8s;
+        }
+
+        /* ===========================================
+           BASE STYLES & CRT OVERLAYS
+           =========================================== */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            background: var(--dark-void);
+            color: var(--white);
+            font-family: var(--font-body);
+        }
+
+        /* CRT Screen Simulation Overlay */
+        .deck-viewport::after {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), 
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.04), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.04));
+            z-index: 9999;
+            background-size: 100% 4px, 6px 100%;
+            pointer-events: none;
+        }
+
+        .deck-viewport {
+            position: fixed;
+            inset: 0;
+            overflow: hidden;
+            background: var(--dark-void);
+        }
+
+        /* 16:9 Scaling Stage */
+        .deck-stage {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 1920px;
+            height: 1080px;
+            overflow: hidden;
+            transform-origin: 0 0;
+            background: var(--dark-void);
+            box-shadow: 0 0 50px rgba(94, 220, 244, 0.1);
+        }
+
+        /* Etched Vector grid background inside stage */
+        .grid-overlay {
+            position: absolute;
+            inset: 0;
+            background-size: 80px 80px;
+            background-image: 
+                linear-gradient(to right, rgba(94, 220, 244, 0.04) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(94, 220, 244, 0.04) 1px, transparent 1px);
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        /* Cosmic Space background texture */
+        .starfield {
+            position: absolute;
+            inset: 0;
+            background-image: 
+                radial-gradient(2px 2px at 150px 220px, var(--neon-pink) 100%, transparent),
+                radial-gradient(3px 3px at 520px 650px, var(--neon-yellow) 100%, transparent),
+                radial-gradient(2px 2px at 850px 150px, var(--neon-cyan) 100%, transparent),
+                radial-gradient(4px 4px at 1350px 780px, var(--soft-lavender) 100%, transparent),
+                radial-gradient(3px 3px at 1700px 350px, var(--neon-cyan) 100%, transparent);
+            opacity: 0.35;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        /* ===========================================
+           SLIDES STACK & LIFE CYCLE STATE
+           =========================================== */
+        .slide {
+            position: absolute;
+            inset: 0;
+            width: 1920px;
+            height: 1080px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: var(--slide-padding);
+            background: transparent;
+            visibility: hidden;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        .slide.active,
+        .slide.visible {
+            visibility: visible;
+            opacity: 1;
+            pointer-events: auto;
+            z-index: 10;
+        }
+
+        /* ===========================================
+           UNIVERSAL LAYOUT ELEMENTS
+           =========================================== */
+        .slide-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px dashed rgba(94, 220, 244, 0.2);
+            padding-bottom: 24px;
+            width: 100%;
+        }
+
+        .slide-tag {
+            font-family: var(--font-mono);
+            font-size: 18px;
+            color: var(--neon-yellow);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .slide-tag::before {
+            content: '// ';
+        }
+
+        .slide-title-hud {
+            font-family: var(--font-mono);
+            font-size: 16px;
+            color: var(--neon-pink);
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .slide-body {
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 40px;
+            margin-bottom: 40px;
+            gap: 60px;
+            height: calc(100% - 200px);
+        }
+
+        .slide-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 2px dashed rgba(240, 166, 202, 0.2);
+            padding-top: 24px;
+            width: 100%;
+            font-family: var(--font-mono);
+            font-size: 16px;
+            color: var(--gray-subtle);
+        }
+
+        .slide-footer .team-info {
+            display: flex;
+            gap: 24px;
+        }
+
+        .slide-footer .team-member {
+            color: var(--soft-lavender);
+        }
+
+        .slide-footer .slide-counter {
+            color: var(--neon-cyan);
+            font-weight: 700;
+        }
+
+        /* ===========================================
+           RETRO HUD COMPONENT LIBRARY (8-BIT ORBIT)
+           =========================================== */
+        .hud-box {
+            background: var(--deep-navy);
+            border: var(--border-pixel) solid var(--neon-pink);
+            position: relative;
+            padding: 40px;
+            box-shadow: 10px 10px 0px 0px var(--neon-cyan);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .bracket {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            border-color: var(--neon-yellow);
+            border-style: solid;
+            pointer-events: none;
+        }
+        .bracket-tl { top: -10px; left: -10px; border-width: 4px 0 0 4px; }
+        .bracket-tr { top: -10px; right: -10px; border-width: 4px 4px 0 0; }
+        .bracket-bl { bottom: -10px; left: -10px; border-width: 0 0 4px 4px; }
+        .bracket-br { bottom: -10px; right: -10px; border-width: 0 4px 4px 0; }
+
+        .hud-label {
+            font-family: var(--font-mono);
+            font-size: 14px;
+            color: var(--neon-cyan);
+            background: var(--dark-void);
+            padding: 4px 12px;
+            position: absolute;
+            top: -16px;
+            left: 24px;
+            border: 2px solid var(--neon-cyan);
+            text-transform: uppercase;
+            font-weight: 700;
+        }
+
+        .term-highlight {
+            color: var(--neon-yellow);
+            font-weight: 700;
+        }
+
+        /* List Styling */
+        .retro-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .retro-list li {
+            font-family: var(--font-body);
+            font-size: 32px;
+            line-height: 1.4;
+            display: flex;
+            align-items: flex-start;
+            gap: 20px;
+        }
+
+        .retro-list li::before {
+            content: '>';
+            font-family: var(--font-mono);
+            color: var(--neon-pink);
+            font-weight: 900;
+            text-shadow: 0 0 8px var(--neon-pink);
+        }
+
+        .list-highlight {
+            color: var(--neon-cyan);
+            font-weight: 700;
+        }
+
+        /* SLIDE 1: Title Slide Layout */
+        .slide-title-page {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+            height: 100%;
+            width: 100%;
+        }
+
+        .title-left {
+            width: 58%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            height: 100%;
+        }
+
+        .title-right {
+            width: 36%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+        }
+
+        .system-banner {
+            font-family: var(--font-mono);
+            font-size: 16px;
+            color: var(--neon-yellow);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 24px;
+            letter-spacing: 2px;
+        }
+
+        .system-banner::before {
+            content: '';
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            background: var(--neon-yellow);
+            box-shadow: 0 0 10px var(--neon-yellow);
+        }
+
+        h1.title-large {
+            font-family: var(--font-display);
+            font-weight: 900;
+            font-size: 88px;
+            line-height: 1.1;
+            color: var(--white);
+            text-shadow: 6px 6px 0px var(--neon-pink);
+            margin-bottom: 32px;
+            text-transform: uppercase;
+        }
+
+        h1.title-large span {
+            color: var(--neon-cyan);
+            text-shadow: 6px 6px 0px var(--deep-navy);
+        }
+
+        .title-subtitle {
+            font-family: var(--font-body);
+            font-size: 32px;
+            line-height: 1.5;
+            color: var(--soft-lavender);
+            max-width: 95%;
+        }
+
+        .hud-terminal-hero {
+            width: 100%;
+            height: 520px;
+        }
+
+        .terminal-hud-header {
+            font-family: var(--font-mono);
+            color: var(--neon-cyan);
+            font-size: 16px;
+            border-bottom: 2px solid rgba(94, 220, 244, 0.2);
+            padding-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .terminal-hud-body {
+            font-family: var(--font-mono);
+            font-size: 20px;
+            line-height: 1.6;
+            margin-top: 24px;
+            color: var(--white);
+            flex-grow: 1;
+        }
+
+        .terminal-hud-body .cmd {
+            color: var(--neon-yellow);
+        }
+
+        .terminal-hud-body .res {
+            color: var(--neon-pink);
+            margin-top: 12px;
+            font-size: 18px;
+        }
+
+        .terminal-hud-footer {
+            margin-top: auto;
+            border-top: 2px dashed rgba(240, 166, 202, 0.3);
+            padding-top: 20px;
+            font-size: 20px;
+        }
+
+        .terminal-hud-footer div {
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .terminal-hud-footer .lbl {
+            color: var(--gray-subtle);
+        }
+
+        .terminal-hud-footer .val {
+            color: var(--neon-yellow);
+            font-weight: 700;
+        }
+
+        /* TWO COLUMNS STANDARD LAYOUT */
+        .col-left-60 {
+            width: 58%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .col-right-40 {
+            width: 36%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .slide-heading {
+            font-family: var(--font-display);
+            font-weight: 900;
+            font-size: 64px;
+            color: var(--white);
+            text-shadow: 4px 4px 0px var(--neon-pink);
+            margin-bottom: 40px;
+            text-transform: uppercase;
+        }
+
+        .slide-heading span {
+            color: var(--neon-cyan);
+        }
+
+        /* Diagrams and custom visual artifacts */
+        .diagram-box {
+            width: 100%;
+            height: 480px;
+            border: 4px solid var(--neon-cyan);
+            background: var(--deep-navy);
+            position: relative;
+            box-shadow: 8px 8px 0px 0px var(--neon-pink);
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .flow-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            width: 100%;
+            height: 100%;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .flow-node {
+            background: var(--dark-void);
+            border: 3px solid var(--neon-pink);
+            width: 90%;
+            padding: 20px;
+            text-align: center;
+            font-family: var(--font-mono);
+            font-size: 20px;
+            color: var(--white);
+            position: relative;
+        }
+
+        .flow-node.active-node {
+            border-color: var(--neon-yellow);
+            box-shadow: 0 0 15px rgba(244, 208, 63, 0.4);
+        }
+
+        .flow-arrow {
+            color: var(--neon-cyan);
+            font-family: var(--font-mono);
+            font-size: 24px;
+            font-weight: 900;
+            line-height: 1;
+            text-shadow: 0 0 8px var(--neon-cyan);
+        }
+
+        .flow-node-title {
+            color: var(--neon-cyan);
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .flow-node-desc {
+            font-size: 15px;
+            color: var(--gray-subtle);
+        }
+
+        /* Table styled with HUD */
+        .retro-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: var(--font-mono);
+            margin-top: 10px;
+        }
+
+        .retro-table th {
+            border-bottom: 4px solid var(--neon-cyan);
+            color: var(--neon-yellow);
+            font-size: 18px;
+            text-align: left;
+            padding: 12px 16px;
+            text-transform: uppercase;
+        }
+
+        .retro-table td {
+            border-bottom: 2px dashed rgba(240, 166, 202, 0.2);
+            padding: 16px;
+            font-size: 18px;
+            color: var(--white);
+        }
+
+        .retro-table tr:hover td {
+            background: rgba(94, 220, 244, 0.05);
+            color: var(--neon-cyan);
+        }
+
+        /* Graphic comparison block */
+        .comparison-split {
+            display: flex;
+            gap: 20px;
+            width: 100%;
+            height: 480px;
+        }
+
+        .comp-card {
+            flex: 1;
+            border: 3px solid var(--neon-cyan);
+            background: var(--deep-navy);
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
+        }
+
+        .comp-card.highlighted {
+            border-color: var(--neon-pink);
+            box-shadow: 8px 8px 0px 0px var(--neon-yellow);
+        }
+
+        .comp-card-title {
+            font-family: var(--font-display);
+            font-size: 28px;
+            color: var(--neon-yellow);
+            text-transform: uppercase;
+            margin-bottom: 16px;
+        }
+
+        .comp-card.highlighted .comp-card-title {
+            color: var(--neon-pink);
+        }
+
+        .comp-card-desc {
+            font-family: var(--font-body);
+            font-size: 22px;
+            line-height: 1.4;
+            color: var(--soft-lavender);
+            flex-grow: 1;
+        }
+
+        .comp-card-metric {
+            font-family: var(--font-mono);
+            font-size: 18px;
+            color: var(--neon-cyan);
+            margin-top: 20px;
+            padding-top: 12px;
+            border-top: 2px dashed rgba(94, 220, 244, 0.2);
+        }
+
+        /* ===========================================
+           TRANSITIONS & ENTRANCE ANIMATIONS
+           =========================================== */
+        .reveal {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: opacity var(--duration-normal) var(--ease-out-expo),
+                        transform var(--duration-normal) var(--ease-out-expo);
+        }
+
+        .slide.active .reveal {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .reveal-right {
+            opacity: 0;
+            transform: scale(0.95) translateX(40px);
+            transition: opacity var(--duration-normal) var(--ease-out-expo),
+                        transform var(--duration-normal) var(--ease-out-expo);
+        }
+
+        .slide.active .reveal-right {
+            opacity: 1;
+            transform: scale(1) translateX(0);
+        }
+
+        /* Staggered load delays */
+        .reveal:nth-child(1) { transition-delay: 0.1s; }
+        .reveal:nth-child(2) { transition-delay: 0.2s; }
+        .reveal:nth-child(3) { transition-delay: 0.3s; }
+        .reveal:nth-child(4) { transition-delay: 0.4s; }
+        .reveal:nth-child(5) { transition-delay: 0.5s; }
+
+        .reveal-right { transition-delay: 0.35s; }
+
+        /* ===========================================
+           INLINE EDITING UI
+           =========================================== */
+        .edit-hotzone {
+            position: fixed;
+            top: 0; left: 0;
+            width: 80px; height: 80px;
+            z-index: 10000;
+            cursor: pointer;
+        }
+
+        .edit-toggle {
+            position: fixed;
+            top: 24px;
+            left: 24px;
+            background: var(--deep-navy);
+            border: 2px solid var(--neon-cyan);
+            color: var(--neon-cyan);
+            padding: 12px 18px;
+            font-family: var(--font-mono);
+            font-size: 14px;
+            cursor: pointer;
+            z-index: 10001;
+            box-shadow: 4px 4px 0px 0px var(--neon-pink);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease, transform 0.2s ease;
+        }
+
+        .edit-toggle.show,
+        .edit-toggle.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .edit-toggle:hover {
+            transform: translate(-2px, -2px);
+            box-shadow: 6px 6px 0px 0px var(--neon-pink);
+            background: var(--neon-cyan);
+            color: var(--dark-void);
+        }
+
+        [contenteditable="true"] {
+            outline: 2px dashed var(--neon-yellow) !important;
+            background: rgba(244, 208, 63, 0.05);
+            padding: 4px;
+        }
+
+        /* ===========================================
+           PRINT SYSTEM (CTRL+P TO PDF)
+           =========================================== */
+        @media print {
+            @page {
+                size: 1920px 1080px;
+                margin: 0;
+            }
+            html, body {
+                width: 1920px !important;
+                height: 1080px !important;
+                overflow: visible !important;
+                background: var(--dark-void) !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            .deck-viewport {
+                position: static !important;
+                overflow: visible !important;
+                background: var(--dark-void) !important;
+            }
+            .deck-stage {
+                position: static !important;
+                width: 1920px !important;
+                height: auto !important;
+                transform: none !important;
+                background: var(--dark-void) !important;
+            }
+            .slide {
+                position: relative !important;
+                display: flex !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+                pointer-events: auto !important;
+                width: 1920px !important;
+                height: 1080px !important;
+                break-after: page !important;
+                page-break-after: always !important;
+                background: var(--dark-void) !important;
+            }
+            .slide:last-child {
+                break-after: auto !important;
+                page-break-after: auto !important;
+            }
+            .edit-toggle, .edit-hotzone {
+                display: none !important;
+            }
+            /* Force all hidden animation elements to be fully visible for printing */
+            .reveal, .reveal-right, .hud-reveal {
+                opacity: 1 !important;
+                transform: none !important;
+                visibility: visible !important;
+                transition: none !important;
+                animation: none !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="deck-viewport">
+        <!-- Hotzone and Toggle Button for inline editor -->
+        <div class="edit-hotzone"></div>
+        <button class="edit-toggle" id="editToggle" title="Modo Edição (Atalho: E)">✏️ EDIT_MODE (E)</button>
+
+        <main class="deck-stage" id="deckStage">
+            <div class="grid-overlay"></div>
+            <div class="starfield"></div>
+
+            <!-- ===========================================
+                 SLIDE 1: TITLE SLIDE
+                 =========================================== -->
+            <section class="slide active">
+                <div class="slide-title-page">
+                    <div class="title-left">
+                        <div class="system-banner reveal">SYSTEM_INITIALIZATION: SLIDES.HTML</div>
+                        <h1 class="title-large reveal">COMO A INTERNET<br><span>FUNCIONA?</span></h1>
+                        <p class="title-subtitle reveal">Descomplicando a rede global: de cabos submarinos à lista telefônica que faz tudo rodar.</p>
+                    </div>
+                    <div class="title-right">
+                        <div class="hud-box hud-terminal-hero reveal-right">
+                            <div class="bracket bracket-tl"></div>
+                            <div class="bracket bracket-tr"></div>
+                            <div class="bracket bracket-bl"></div>
+                            <div class="bracket bracket-br"></div>
+                            <div class="hud-label">TERM_CON_01</div>
+                            
+                            <div class="terminal-hud-header">
+                                <span>INTERNET_TRACE</span>
+                                <span>ONLINE</span>
+                            </div>
+                            <div class="terminal-hud-body">
+                                <p class="cmd">&gt; buscar google.com</p>
+                                <p class="res">Encontrado número IP:<br>142.250.191.46<br><br>Conectando via cabos submarinos...</p>
+                            </div>
+                            <div class="terminal-hud-footer">
+                                <div><span class="lbl">MEMBRO_A:</span> <span class="val">Gabriel Cauzin Nobre Pinto</span></div>
+                                <div><span class="lbl">MEMBRO_B:</span> <span class="val">Douglas Avelino da Silva Sousa</span></div>
+                                <div><span class="lbl">MATÉRIA:</span> <span class="val">Introdução a ECI</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===========================================
+                 SLIDE 2: THE PHYSICAL INTERNET
+                 =========================================== -->
+            <section class="slide">
+                <header class="slide-header">
+                    <div class="slide-tag">01 // Cabos e Máquinas</div>
+                    <div class="slide-title-hud">INTERNET_UNDER_THE_HOOD</div>
+                </header>
+                <div class="slide-body">
+                    <div class="col-left-60">
+                        <h2 class="slide-heading">A INTERNET <span>NÃO ESTÁ</span> NA NUVEM!</h2>
+                        <ul class="retro-list reveal">
+                            <li><span class="list-highlight">Uma Rede Física:</span> A internet é, na verdade, uma gigantesca teia mundial de computadores ligados por cabos físicos.</li>
+                            <li><span class="list-highlight">Cabos Submarinos:</span> Grossos cabos de fibra óptica cruzam os oceanos bem no fundo do mar, ligando continentes em velocidade da luz.</li>
+                            <li><span class="list-highlight">Computadores e Clientes:</span> O seu celular (cliente) envia sinais elétricos pelos cabos para pedir informações a outros computadores maiores (servidores).</li>
+                        </ul>
+                    </div>
+                    <div class="col-right-40">
+                        <div class="diagram-box reveal-right">
+                            <div class="bracket bracket-tl"></div>
+                            <div class="bracket bracket-tr"></div>
+                            <div class="bracket bracket-bl"></div>
+                            <div class="bracket bracket-br"></div>
+                            <div class="hud-label">THE_PHYSICAL_WEB</div>
+                            
+                            <div class="flow-container">
+                                <div class="flow-node" style="width:100%; border-color: var(--neon-pink);">
+                                    <div class="flow-node-title">SEU SMARTPHONE</div>
+                                    <div class="flow-node-desc">Pede uma foto do Instagram</div>
+                                </div>
+                                <div class="flow-arrow">⚡ [Cabo Submarino] ⚡</div>
+                                <div class="flow-node active-node" style="width:100%; border-color: var(--neon-cyan);">
+                                    <div class="flow-node-title">SERVIDOR GIGANTE</div>
+                                    <div class="flow-node-desc">Envia a foto de volta</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <footer class="slide-footer">
+                    <div class="team-info">
+                        <span class="team-member">Gabriel & Douglas</span>
+                        <span>|</span>
+                        <span>Tema: Como a Internet Funciona</span>
+                    </div>
+                    <div class="slide-counter">02 / 08</div>
+                </footer>
+            </section>
+
+            <!-- ===========================================
+                 SLIDE 3: WHAT IS AN IP ADDRESS?
+                 =========================================== -->
+            <section class="slide">
+                <header class="slide-header">
+                    <div class="slide-tag">02 // O Endereço IP</div>
+                    <div class="slide-title-hud">IP_ADDRESS_EXPLAINED</div>
+                </header>
+                <div class="slide-body">
+                    <div class="col-left-60">
+                        <h2 class="slide-heading">O QUE É O <span>NÚMERO IP</span>?</h2>
+                        <ul class="retro-list reveal">
+                            <li><span class="list-highlight">O Endereço da Máquina:</span> Cada computador ou celular conectado na internet possui um endereço exclusivo chamado IP.</li>
+                            <li><span class="list-highlight">Formato Numérico:</span> É um conjunto de números de 32 bits (4 bytes) como 186.230.134.12.</li>
+                            <li><span class="list-highlight">Como as Cartas no Correio:</span> Para enviar dados de um aparelho para outro, você precisa saber o "endereço de destino" exato daquela máquina.</li>
+                        </ul>
+                    </div>
+                    <div class="col-right-40">
+                        <div class="diagram-box reveal-right" style="border-color: var(--neon-yellow);">
+                            <div class="bracket bracket-tl"></div>
+                            <div class="bracket bracket-tr"></div>
+                            <div class="bracket bracket-bl"></div>
+                            <div class="bracket bracket-br"></div>
+                            <div class="hud-label">GPS_COORDINATES</div>
+                            
+                            <div class="flow-container">
+                                <div class="flow-node" style="width: 100%; border-color: var(--neon-pink); padding: 30px;">
+                                    <div style="font-size: 24px; font-family: var(--font-mono); color: var(--neon-yellow); margin-bottom: 8px;">MÁQUINA DESTINO</div>
+                                    <div style="font-size: 32px; font-family: var(--font-display); font-weight: 900; color: var(--white); text-shadow: 0 0 10px var(--neon-pink);">
+                                        186.230.134.12
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <footer class="slide-footer">
+                    <div class="team-info">
+                        <span class="team-member">Gabriel & Douglas</span>
+                        <span>|</span>
+                        <span>Tema: Como a Internet Funciona</span>
+                    </div>
+                    <div class="slide-counter">03 / 08</div>
+                </footer>
+            </section>
+
+            <!-- ===========================================
+                 SLIDE 4: THE OLD METHOD (HOSTS.TXT)
+                 =========================================== -->
+            <section class="slide">
+                <header class="slide-header">
+                    <div class="slide-tag">03 // O Método Antigo</div>
+                    <div class="slide-title-hud">THE_MANUAL_HOSTS_FILE</div>
+                </header>
+                <div class="slide-body">
+                    <div class="col-left-60">
+                        <h2 class="slide-heading">O ARQUIVO <span>HOSTS.TXT</span></h2>
+                        <ul class="retro-list reveal">
+                            <li><span class="list-highlight">Mapeamento Manual:</span> No início, toda a internet era mapeada em um único arquivo de texto estático, onde cada linha continha um IP e o nome correspondente.</li>
+                            <li><span class="list-highlight">Download via FTP:</span> Para acessar outros computadores, sua máquina precisava baixar a versão mais recente desse arquivo de um servidor central diariamente.</li>
+                            <li><span class="list-highlight">O Colapso:</span> Conforme a rede cresceu de dezenas para milhões (e depois bilhões) de dispositivos, ficou impossível atualizar e distribuir esse arquivo manualmente. A centralização virou o maior gargalo da rede!</li>
+                        </ul>
+                    </div>
+                    <div class="col-right-40" style="width: 38%;">
+                        <div class="hud-box reveal-right" style="padding: 24px; font-family: var(--font-mono); height: 480px; justify-content: flex-start; background: #0f1224;">
+                            <div class="bracket bracket-tl"></div>
+                            <div class="bracket bracket-tr"></div>
+                            <div class="bracket bracket-bl"></div>
+                            <div class="bracket bracket-br"></div>
+                            <div class="hud-label">MOCK_HOSTS_FILE</div>
+                            
+                            <div style="font-size: 16px; color: var(--gray-subtle); border-bottom: 2px solid rgba(240, 166, 202, 0.2); padding-bottom: 8px; margin-bottom: 12px; text-transform: uppercase;">
+                                FILE: /etc/hosts (CIRCA 1980)
+                            </div>
+                            <div style="font-size: 18px; line-height: 1.6; color: var(--white);">
+                                <span style="color: var(--neon-cyan);">127.0.0.1</span>      localhost<br>
+                                <span style="color: var(--neon-cyan);">10.0.0.5</span>       mainframe.sri<br>
+                                <span style="color: var(--neon-cyan);">157.240.22.35</span>  instagram.com<br>
+                                <span style="color: var(--neon-cyan);">186.230.134.12</span> ufrj.br<br>
+                                <span style="color: var(--neon-cyan);">142.250.191.46</span> google.com
+                            </div>
+                            <div style="margin-top: auto; border-top: 2px dashed rgba(94, 220, 244, 0.2); padding-top: 12px; color: var(--neon-pink); font-size: 15px; font-weight: 700; text-transform: uppercase; animation: blink 1s step-end infinite;">
+                                ERROR: FILE_SIZE_LIMIT_EXCEEDED
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <footer class="slide-footer">
+                    <div class="team-info">
+                        <span class="team-member">Gabriel & Douglas</span>
+                        <span>|</span>
+                        <span>Tema: Como a Internet Funciona</span>
+                    </div>
+                    <div class="slide-counter">04 / 08</div>
+                </footer>
+            </section>
+
+            <!-- ===========================================
+                 SLIDE 5: THE DNS (CONTACTS LIST)
+                 =========================================== -->
+            <section class="slide">
+                <header class="slide-header">
+                    <div class="slide-tag">04 // O DNS</div>
+                    <div class="slide-title-hud">DNS_THE_CONTACTS_LIST</div>
+                </header>
+                <div class="slide-body">
+                    <div class="col-left-60">
+                        <h2 class="slide-heading">A <span>AGENDA</span> DA INTERNET</h2>
+                        <ul class="retro-list reveal">
+                            <li><span class="list-highlight">Problema Humano:</span> Ninguém decora números IP! Seria péssimo ter que lembrar "142.250.191.46" para abrir o Google.</li>
+                            <li><span class="list-highlight">Agenda de Contatos:</span> No seu celular, você clica em "Mãe" em vez de digitar o número de telefone dela toda vez.</li>
+                            <li><span class="list-highlight">Sistema DNS:</span> O DNS é essa agenda global. Ele recebe o nome do site que você digitou (ufrj.br) e traduz para o IP correspondente.</li>
+                        </ul>
+                    </div>
+                    <div class="col-right-40" style="width: 38%;">
+                        <div class="hud-box reveal-right" style="padding: 24px;">
+                            <div class="bracket bracket-tl"></div>
+                            <div class="bracket bracket-tr"></div>
+                            <div class="bracket bracket-bl"></div>
+                            <div class="bracket bracket-br"></div>
+                            <div class="hud-label">AGENDA_DE_CONTATOS</div>
+                            
+                            <table class="retro-table">
+                                <thead>
+                                    <tr>
+                                        <th>Nome Amigável</th>
+                                        <th>Tradução (Número IP)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td style="color: var(--neon-yellow);">google.com</td>
+                                        <td>142.250.191.46</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="color: var(--neon-pink);">ufrj.br</td>
+                                        <td>186.230.134.12</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="color: var(--neon-cyan);">wikipedia.org</td>
+                                        <td>198.35.26.96</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <footer class="slide-footer">
+                    <div class="team-info">
+                        <span class="team-member">Gabriel & Douglas</span>
+                        <span>|</span>
+                        <span>Tema: Como a Internet Funciona</span>
+                    </div>
+                    <div class="slide-counter">05 / 08</div>
+                </footer>
+            </section>
+
+            <!-- ===========================================
+                 SLIDE 6: HOW THE LOOKUP WORKS
+                 =========================================== -->
+            <section class="slide">
+                <header class="slide-header">
+                    <div class="slide-tag">05 // A Busca Rápida</div>
+                    <div class="slide-title-hud">DNS_LOOKUP_JOURNEY</div>
+                </header>
+                <div class="slide-body">
+                    <div class="col-left-60">
+                        <h2 class="slide-heading">COMO A <span>TRADUÇÃO</span> É FEITA?</h2>
+                        <ul class="retro-list reveal">
+                            <li><span class="list-highlight">Você digita o nome:</span> Digita "ufrj.br" e dá Enter.</li>
+                            <li><span class="list-highlight">Computador pergunta:</span> Seu PC pergunta a um servidor centralizador local: "Ei, qual o número IP do site ufrj.br?".</li>
+                            <li><span class="list-highlight">Resposta viaja:</span> O servidor local busca o número em uma rede de servidores maiores, acha o IP, devolve para o seu PC, e a foto carrega! Tudo isso em menos de 1 segundo!</li>
+                        </ul>
+                    </div>
+                    <div class="col-right-40">
+                        <div class="diagram-box reveal-right" style="border-color: var(--neon-yellow);">
+                            <div class="bracket bracket-tl"></div>
+                            <div class="bracket bracket-tr"></div>
+                            <div class="bracket bracket-bl"></div>
+                            <div class="bracket bracket-br"></div>
+                            <div class="hud-label">PASSO_A_PASSO</div>
+                            
+                            <div class="flow-container">
+                                <div class="flow-node" style="width: 100%; border-color: var(--neon-cyan);">
+                                    <div class="flow-node-title">1. " ufrj.br "</div>
+                                    <div class="flow-node-desc">Você digita no navegador</div>
+                                </div>
+                                <div class="flow-arrow">▼</div>
+                                <div class="flow-node" style="width: 100%; border-color: var(--neon-pink);">
+                                    <div class="flow-node-title">2. BUSCA NO DNS</div>
+                                    <div class="flow-node-desc">"O IP de ufrj.br é 186.230.134.12!"</div>
+                                </div>
+                                <div class="flow-arrow">▼</div>
+                                <div class="flow-node active-node" style="width: 100%; border-color: var(--neon-yellow);">
+                                    <div class="flow-node-title">3. CONEXÃO DIRETA</div>
+                                    <div class="flow-node-desc">Seu PC conecta direto no IP!</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <footer class="slide-footer">
+                    <div class="team-info">
+                        <span class="team-member">Gabriel & Douglas</span>
+                        <span>|</span>
+                        <span>Tema: Como a Internet Funciona</span>
+                    </div>
+                    <div class="slide-counter">06 / 08</div>
+                </footer>
+            </section>
+
+            <!-- ===========================================
+                 SLIDE 7: TYPES OF DNS RECORDS
+                 =========================================== -->
+            <section class="slide">
+                <header class="slide-header">
+                    <div class="slide-tag">06 // Tipos de Registro</div>
+                    <div class="slide-title-hud">DNS_RECORD_TYPES</div>
+                </header>
+                <div class="slide-body">
+                    <div class="col-left-60">
+                        <h2 class="slide-heading">TIPOS DE <span>REGISTRO</span> PRINCIPAIS</h2>
+                        <ul class="retro-list reveal">
+                            <li><span class="list-highlight">Registros A / AAAA:</span> Converte o nome diretamente em um endereço IPv4 / IPv6 para as máquinas conversarem.</li>
+                            <li><span class="list-highlight">CNAME:</span> Funciona como um apelido ("alias"). Se "www.ufrj.br" for acessado, ele redireciona para "ufrj.br".</li>
+                            <li><span class="list-highlight">MX (Mail Exchanger):</span> Indica o servidor que recebe e-mails para aquele site específico.</li>
+                        </ul>
+                    </div>
+                    <div class="col-right-40" style="width: 38%;">
+                        <div class="hud-box reveal-right" style="padding: 24px;">
+                            <div class="bracket bracket-tl"></div>
+                            <div class="bracket bracket-tr"></div>
+                            <div class="bracket bracket-bl"></div>
+                            <div class="bracket bracket-br"></div>
+                            <div class="hud-label">MOCK_DNS_TABLE</div>
+                            
+                            <table class="retro-table">
+                                <thead>
+                                    <tr>
+                                        <th>Nome</th>
+                                        <th>Tipo</th>
+                                        <th>Valor de Destino</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td style="color: var(--neon-yellow);">ufrj.br</td>
+                                        <td style="color: var(--neon-pink);">A</td>
+                                        <td>186.230.134.12</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="color: var(--neon-yellow);">www</td>
+                                        <td style="color: var(--neon-pink);">CNAME</td>
+                                        <td>ufrj.br.</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="color: var(--neon-yellow);">mail</td>
+                                        <td style="color: var(--neon-pink);">MX</td>
+                                        <td>mx.ufrj.br.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <footer class="slide-footer">
+                    <div class="team-info">
+                        <span class="team-member">Gabriel & Douglas</span>
+                        <span>|</span>
+                        <span>Tema: Como a Internet Funciona</span>
+                    </div>
+                    <div class="slide-counter">07 / 08</div>
+                </footer>
+            </section>
+
+            <!-- ===========================================
+                 SLIDE 8: CONCLUSION
+                 =========================================== -->
+            <section class="slide">
+                <header class="slide-header">
+                    <div class="slide-tag">07 // Conclusão</div>
+                    <div class="slide-title-hud">WRAP_UP_STAGE</div>
+                </header>
+                <div class="slide-body" style="align-items: center; justify-content: center; text-align: center; width: 100%;">
+                    <div style="max-width: 1200px; display: flex; flex-direction: column; align-items: center;">
+                        <h2 class="slide-heading" style="font-size: 80px; margin-bottom: 24px;">INSERT COIN TO <span>CONTINUE</span></h2>
+                        <p style="font-family: var(--font-body); font-size: 34px; color: var(--soft-lavender); line-height: 1.5; margin-bottom: 48px; max-width: 900px;">
+                            A internet é física (cabos submarinos), as máquinas conversam via números (IP) e a "agenda telefônica" do DNS traduz nossos nomes preferidos para esses números em milissegundos.
+                        </p>
+                        
+                        <div class="hud-box" style="padding: 24px 60px; border-color: var(--neon-yellow); box-shadow: 0 0 20px rgba(244, 208, 63, 0.2);">
+                            <div class="bracket bracket-tl"></div>
+                            <div class="bracket bracket-tr"></div>
+                            <div class="bracket bracket-bl"></div>
+                            <div class="bracket bracket-br"></div>
+                            <span style="font-family: var(--font-mono); font-size: 32px; color: var(--neon-yellow); font-weight: 900; text-transform: uppercase; letter-spacing: 4px; text-shadow: 0 0 10px var(--neon-yellow);">
+                                OBRIGADO! PERGUNTAS?
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                <footer class="slide-footer">
+                    <div class="team-info">
+                        <span class="team-member">Gabriel & Douglas</span>
+                        <span>|</span>
+                        <span>Tema: Como a Internet Funciona</span>
+                    </div>
+                    <div class="slide-counter">08 / 08</div>
+                </footer>
+            </section>
+        </main>
+    </div>
+
+    <!-- ===========================================
+         SLIDE PRESENTATION CONTROLLER
+         =========================================== -->
+    <script>
+        class SlidePresentation {
+            constructor() {
+                this.slides = document.querySelectorAll('.slide');
+                this.currentSlide = 0;
+                this.stage = document.getElementById('deckStage');
+                
+                this.setupStageScale();
+                this.setupKeyboardNav();
+                this.setupTouchNav();
+                this.setupMouseWheelNav();
+                this.showSlide(0);
+            }
+
+            setupStageScale() {
+                const scale = () => {
+                    const factor = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+                    const x = (window.innerWidth - 1920 * factor) / 2;
+                    const y = (window.innerHeight - 1080 * factor) / 2;
+                    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${factor})`;
+                };
+                scale();
+                window.addEventListener('resize', scale);
+            }
+
+            setupKeyboardNav() {
+                document.addEventListener('keydown', (e) => {
+                    if (e.target.getAttribute('contenteditable') === 'true') return;
+
+                    switch (e.key) {
+                        case 'ArrowRight':
+                        case ' ':
+                        case 'PageDown':
+                            this.nextSlide();
+                            break;
+                        case 'ArrowLeft':
+                        case 'PageUp':
+                            this.prevSlide();
+                            break;
+                        case 'Home':
+                            this.showSlide(0);
+                            break;
+                        case 'End':
+                            this.showSlide(this.slides.length - 1);
+                            break;
+                    }
+                });
+            }
+
+            setupTouchNav() {
+                let startX = 0;
+                let startY = 0;
+                
+                document.addEventListener('touchstart', (e) => {
+                    startX = e.touches[0].clientX;
+                    startY = e.touches[0].clientY;
+                }, { passive: true });
+
+                document.addEventListener('touchend', (e) => {
+                    if (e.target.getAttribute('contenteditable') === 'true') return;
+
+                    const diffX = e.changedTouches[0].clientX - startX;
+                    const diffY = e.changedTouches[0].clientY - startY;
+
+                    if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 80) {
+                        if (diffX > 0) {
+                            this.prevSlide();
+                        } else {
+                            this.nextSlide();
+                        }
+                    }
+                }, { passive: true });
+            }
+
+            setupMouseWheelNav() {
+                let lastScrollTime = 0;
+                document.addEventListener('wheel', (e) => {
+                    if (e.target.closest('[contenteditable="true"]')) return;
+                    
+                    const currentTime = new Date().getTime();
+                    if (currentTime - lastScrollTime < 1200) return;
+
+                    if (Math.abs(e.deltaY) > 30) {
+                        if (e.deltaY > 0) {
+                            this.nextSlide();
+                        } else {
+                            this.prevSlide();
+                        }
+                        lastScrollTime = currentTime;
+                    }
+                }, { passive: false });
+            }
+
+            nextSlide() {
+                if (this.currentSlide < this.slides.length - 1) {
+                    this.showSlide(this.currentSlide + 1);
+                }
+            }
+
+            prevSlide() {
+                if (this.currentSlide > 0) {
+                    this.showSlide(this.currentSlide - 1);
+                }
+            }
+
+            showSlide(index) {
+                this.currentSlide = Math.max(0, Math.min(index, this.slides.length - 1));
+                this.slides.forEach((slide, i) => {
+                    slide.classList.toggle('active', i === this.currentSlide);
+                    slide.classList.toggle('visible', i === this.currentSlide);
+                });
+                
+                sessionStorage.setItem('currentSlideIdx', this.currentSlide);
+            }
+        }
+
+        const presentation = new SlidePresentation();
+        
+        const savedSlideIdx = sessionStorage.getItem('currentSlideIdx');
+        if (savedSlideIdx !== null) {
+            presentation.showSlide(parseInt(savedSlideIdx, 10));
+        }
+
+        // ===========================================
+        // INLINE TEXT EDITOR CLASS (WITH LOCALSTORAGE)
+        // ===========================================
+        class InlineEditor {
+            constructor() {
+                this.isActive = false;
+                this.toggleBtn = document.getElementById('editToggle');
+                this.setupHandlers();
+                this.loadSavedContent();
+            }
+
+            setupHandlers() {
+                this.toggleBtn.addEventListener('click', () => this.toggleEditMode());
+
+                const hotzone = document.querySelector('.edit-hotzone');
+                let hideTimeout = null;
+
+                hotzone.addEventListener('mouseenter', () => {
+                    clearTimeout(hideTimeout);
+                    this.toggleBtn.classList.add('show');
+                });
+                hotzone.addEventListener('mouseleave', () => {
+                    hideTimeout = setTimeout(() => {
+                        if (!this.isActive) this.toggleBtn.classList.remove('show');
+                    }, 400);
+                });
+                this.toggleBtn.addEventListener('mouseenter', () => {
+                    clearTimeout(hideTimeout);
+                });
+                this.toggleBtn.addEventListener('mouseleave', () => {
+                    hideTimeout = setTimeout(() => {
+                        if (!this.isActive) this.toggleBtn.classList.remove('show');
+                    }, 400);
+                });
+
+                hotzone.addEventListener('click', () => this.toggleEditMode());
+
+                document.addEventListener('keydown', (e) => {
+                    if ((e.key === 'e' || e.key === 'E') && e.target.getAttribute('contenteditable') !== 'true') {
+                        e.preventDefault();
+                        this.toggleEditMode();
+                    }
+                    
+                    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                        e.preventDefault();
+                        this.saveAllChanges();
+                        alert('Alterações salvas localmente!');
+                    }
+                });
+            }
+
+            toggleEditMode() {
+                this.isActive = !this.isActive;
+                this.toggleBtn.classList.toggle('active', this.isActive);
+                this.toggleBtn.innerText = this.isActive ? '💾 SAVE_MODE (E)' : '✏️ EDIT_MODE (E)';
+
+                const editableTags = 'h1, h2, p, span, li, td, th';
+                const elements = document.querySelectorAll(editableTags);
+                
+                elements.forEach(el => {
+                    if (el.closest('.edit-toggle') || el.closest('.edit-hotzone') || el.classList.contains('slide-counter')) return;
+                    
+                    if (this.isActive) {
+                        el.setAttribute('contenteditable', 'true');
+                    } else {
+                        el.removeAttribute('contenteditable');
+                    }
+                });
+
+                if (!this.isActive) {
+                    this.saveAllChanges();
+                }
+            }
+
+            saveAllChanges() {
+                const editableTags = 'h1, h2, p, span, li, td, th';
+                const elements = document.querySelectorAll(editableTags);
+                const pageData = [];
+
+                elements.forEach((el, index) => {
+                    if (el.closest('.edit-toggle') || el.closest('.edit-hotzone') || el.classList.contains('slide-counter')) return;
+                    pageData.push({
+                        index: index,
+                        html: el.innerHTML
+                    });
+                });
+
+                localStorage.setItem('dnsPresentation_editData', JSON.stringify(pageData));
+            }
+
+            loadSavedContent() {
+                const dataStr = localStorage.getItem('dnsPresentation_editData');
+                if (!dataStr) return;
+
+                const pageData = JSON.parse(dataStr);
+                const editableTags = 'h1, h2, p, span, li, td, th';
+                const elements = document.querySelectorAll(editableTags);
+                
+                // Contar elementos editáveis atuais (filtrando os botões de edição e contadores)
+                const currentElements = Array.from(elements).filter(el => 
+                    !(el.closest('.edit-toggle') || el.closest('.edit-hotzone') || el.classList.contains('slide-counter'))
+                );
+
+                // Se a quantidade de elementos mudou, as posições de salvamento (índices) mudaram.
+                // Para evitar misturar/embaralhar os textos em slides errados, limpamos os dados antigos.
+                if (pageData.length !== currentElements.length) {
+                    console.warn("A estrutura do arquivo mudou! Limpando histórico de edições antigas para evitar colisão.");
+                    localStorage.removeItem('dnsPresentation_editData');
+                    return;
+                }
+
+                elements.forEach((el, index) => {
+                    if (el.closest('.edit-toggle') || el.closest('.edit-hotzone') || el.classList.contains('slide-counter')) return;
+                    
+                    const savedItem = pageData.find(item => item.index === index);
+                    if (savedItem) {
+                        el.innerHTML = savedItem.html;
+                    }
+                });
+            }
+        }
+
+        const editor = new InlineEditor();
+    </script>
+</body>
+</html>
